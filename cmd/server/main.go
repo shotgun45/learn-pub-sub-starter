@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	"github.com/rabbitmq/amqp091-go"
@@ -34,21 +35,56 @@ func main() {
 	}
 	defer ch.Close()
 
-	// Publish a pause message using PublishJSON
-	playingState := routing.PlayingState{IsPaused: true}
-	err = pubsub.PublishJSON(ch, routing.ExchangePerilDirect, routing.PauseKey, playingState)
-	if err != nil {
-		log.Fatalf("Failed to publish message: %v", err)
-	}
-	fmt.Println("Published pause message to RabbitMQ!")
+	// Print server help to show available commands
+	gamelogic.PrintServerHelp()
 
-	// Set up signal handling for graceful shutdown
+	// Set up signal handling for graceful shutdown (non-blocking)
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	// Wait for signal
-	<-sigChan
+	// Start infinite loop for REPL
+	for {
+		// Check for signals (non-blocking)
+		select {
+		case <-sigChan:
+			fmt.Println("Shutting down server...")
+			fmt.Println("Connection closed.")
+			return
+		default:
+			// Continue with REPL
+		}
 
-	fmt.Println("Shutting down server...")
-	fmt.Println("Connection closed.")
+		// Get input from user
+		words := gamelogic.GetInput()
+		if len(words) == 0 {
+			continue
+		}
+
+		// Check first word for commands
+		command := words[0]
+		switch command {
+		case "pause":
+			fmt.Println("Sending pause message...")
+			playingState := routing.PlayingState{IsPaused: true}
+			err = pubsub.PublishJSON(ch, routing.ExchangePerilDirect, routing.PauseKey, playingState)
+			if err != nil {
+				log.Printf("Failed to publish pause message: %v", err)
+			}
+
+		case "resume":
+			fmt.Println("Sending resume message...")
+			playingState := routing.PlayingState{IsPaused: false}
+			err = pubsub.PublishJSON(ch, routing.ExchangePerilDirect, routing.PauseKey, playingState)
+			if err != nil {
+				log.Printf("Failed to publish resume message: %v", err)
+			}
+
+		case "quit":
+			fmt.Println("Exiting...")
+			return
+
+		default:
+			fmt.Printf("Don't understand command: %s\n", command)
+		}
+	}
 }
