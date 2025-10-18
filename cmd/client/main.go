@@ -3,9 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
@@ -52,13 +49,49 @@ func main() {
 
 	fmt.Printf("Queue %s declared and bound successfully!\n", queue.Name)
 
-	// Set up signal handling for graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	// Create a new game state
+	gameState := gamelogic.NewGameState(username)
 
-	// Wait for signal
-	<-sigChan
+	// Start REPL loop
+	for {
+		// Get input from user
+		words := gamelogic.GetInput()
+		if len(words) == 0 {
+			continue
+		}
 
-	fmt.Println("Shutting down client...")
-	fmt.Println("Connection closed.")
+		// Check first word for commands
+		command := words[0]
+		switch command {
+		case "spawn":
+			err := gameState.CommandSpawn(words)
+			if err != nil {
+				fmt.Printf("Error spawning unit: %v\n", err)
+			}
+
+		case "move":
+			_, err := gameState.CommandMove(words)
+			if err != nil {
+				fmt.Printf("Error moving unit: %v\n", err)
+			} else {
+				fmt.Println("Move successful!")
+			}
+
+		case "status":
+			gameState.CommandStatus()
+
+		case "help":
+			gamelogic.PrintClientHelp()
+
+		case "spam":
+			fmt.Println("Spamming not allowed yet!")
+
+		case "quit":
+			gamelogic.PrintQuit()
+			return
+
+		default:
+			fmt.Printf("Unknown command: %s\n", command)
+		}
+	}
 }
