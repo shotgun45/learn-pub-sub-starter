@@ -35,6 +35,20 @@ func main() {
 	}
 	defer ch.Close()
 
+	// Declare and bind a durable queue for game logs
+	routingKey := fmt.Sprintf("%s.*", routing.GameLogSlug)
+	_, queue, err := pubsub.DeclareAndBind(
+		conn,
+		routing.ExchangePerilTopic, // exchange
+		routing.GameLogSlug,        // queueName (game_logs)
+		routingKey,                 // key (game_logs.*)
+		pubsub.Durable,             // queueType
+	)
+	if err != nil {
+		log.Fatalf("Failed to declare and bind game logs queue: %v", err)
+	}
+	fmt.Printf("Durable queue %s declared and bound to %s exchange with routing key %s\n", queue.Name, routing.ExchangePerilTopic, routingKey)
+
 	// Print server help to show available commands
 	gamelogic.PrintServerHelp()
 
