@@ -92,3 +92,56 @@ func PublishJSON[T any](ch *amqp091.Channel, exchange, key string, val T) error 
 		},
 	)
 }
+
+// SubscribeJSON subscribes to a queue and handles JSON messages with a generic handler
+func SubscribeJSON[T any](
+	conn *amqp091.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType,
+	handler func(T),
+) error {
+	// Call DeclareAndBind to ensure the queue exists and is bound
+	ch, _, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	if err != nil {
+		return err
+	}
+
+	// Get a channel of deliveries by consuming from the queue
+	deliveries, err := ch.Consume(
+		queueName, // queue
+		"",        // consumer (empty string for auto-generated)
+		false,     // autoAck
+		false,     // exclusive
+		false,     // noLocal
+		false,     // noWait
+		nil,       // args
+	)
+	if err != nil {
+		ch.Close()
+		return err
+	}
+
+	// Start a goroutine to handle messages
+	go func() {
+		defer ch.Close()
+		for delivery := range deliveries {
+			// Unmarshal the message body into type T
+			var message T
+			err := json.Unmarshal(delivery.Body, &message)
+			if err != nil {
+				// Log error but continue processing other messages
+				continue
+			}
+
+			// Call the handler function with the unmarshaled message
+			handler(message)
+
+			// Acknowledge the message to remove it from the queue
+			delivery.Ack(false)
+		}
+	}()
+
+	return nil
+}

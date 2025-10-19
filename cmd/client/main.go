@@ -10,6 +10,14 @@ import (
 	"github.com/rabbitmq/amqp091-go"
 )
 
+// handlerPause creates a handler function for pause/resume messages
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(ps)
+	}
+}
+
 func main() {
 	fmt.Println("Starting Peril client...")
 
@@ -51,6 +59,19 @@ func main() {
 
 	// Create a new game state
 	gameState := gamelogic.NewGameState(username)
+
+	// Subscribe to pause messages using SubscribeJSON
+	err = pubsub.SubscribeJSON(
+		conn,                        // connection
+		routing.ExchangePerilDirect, // exchange
+		queueName,                   // queue name (pause.username)
+		routing.PauseKey,            // routing key (pause)
+		pubsub.Transient,            // queue type
+		handlerPause(gameState),     // handler function
+	)
+	if err != nil {
+		log.Fatalf("Failed to subscribe to pause messages: %v", err)
+	}
 
 	// Start REPL loop
 	for {
