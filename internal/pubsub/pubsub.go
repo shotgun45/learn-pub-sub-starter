@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 
+	"github.com/bootdotdev/learn-pub-sub-starter/internal/routing"
 	"github.com/rabbitmq/amqp091-go"
 )
 
@@ -58,7 +59,9 @@ func DeclareAndBind(
 		autoDelete, // autoDelete
 		exclusive,  // exclusive
 		false,      // noWait
-		nil,        // args
+		amqp091.Table{
+			"x-dead-letter-exchange": routing.ExchangePerilDLX,
+		}, // args
 	)
 	if err != nil {
 		ch.Close()
