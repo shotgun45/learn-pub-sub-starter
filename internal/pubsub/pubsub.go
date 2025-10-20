@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 	"encoding/json"
+	"log"
 
 	"github.com/rabbitmq/amqp091-go"
 )
@@ -13,6 +14,15 @@ type SimpleQueueType int
 const (
 	Transient SimpleQueueType = iota
 	Durable
+)
+
+// AckType represents the acknowledgment type for message handling
+type AckType int
+
+const (
+	Ack AckType = iota
+	NackRequeue
+	NackDiscard
 )
 
 // DeclareAndBind creates a channel, declares a queue, and binds it to an exchange
@@ -100,7 +110,7 @@ func SubscribeJSON[T any](
 	queueName,
 	key string,
 	queueType SimpleQueueType,
-	handler func(T),
+	handler func(T) AckType,
 ) error {
 	// Call DeclareAndBind to ensure the queue exists and is bound
 	ch, _, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
@@ -131,15 +141,32 @@ func SubscribeJSON[T any](
 			var message T
 			err := json.Unmarshal(delivery.Body, &message)
 			if err != nil {
-				// Log error but continue processing other messages
+				// Log error and discard message
+				log.Printf("Failed to unmarshal message: %v", err)
+				delivery.Nack(false, false)
+				log.Println("Message nacked (discarded) due to unmarshal error")
 				continue
 			}
 
 			// Call the handler function with the unmarshaled message
-			handler(message)
+			ackType := handler(message)
 
-			// Acknowledge the message to remove it from the queue
-			delivery.Ack(false)
+			// Handle acknowledgment based on the returned AckType
+			switch ackType {
+			case Ack:
+				delivery.Ack(false)
+				log.Println("Message acknowledged (Ack)")
+			case NackRequeue:
+				delivery.Nack(false, true)
+				log.Println("Message nacked (requeued)")
+			case NackDiscard:
+				delivery.Nack(false, false)
+				log.Println("Message nacked (discarded)")
+			default:
+				// Default to Ack if unknown type
+				delivery.Ack(false)
+				log.Printf("Unknown AckType %v, defaulting to Ack", ackType)
+			}
 		}
 	}()
 
