@@ -134,17 +134,18 @@ func PublishGob[T any](ch *amqp091.Channel, exchange, key string, val T) error {
 	)
 }
 
-// SubscribeJSON subscribes to a queue and handles JSON messages with a generic handler
-func SubscribeJSON[T any](
+// subscribe is a helper function to share duplicate code between SubscribeJSON and SubscribeGob
+func subscribe[T any](
 	conn *amqp091.Connection,
 	exchange,
 	queueName,
 	key string,
-	queueType SimpleQueueType,
+	simpleQueueType SimpleQueueType,
 	handler func(T) AckType,
+	unmarshaller func([]byte) (T, error),
 ) error {
 	// Call DeclareAndBind to ensure the queue exists and is bound
-	ch, _, err := DeclareAndBind(conn, exchange, queueName, key, queueType)
+	ch, _, err := DeclareAndBind(conn, exchange, queueName, key, simpleQueueType)
 	if err != nil {
 		return err
 	}
@@ -168,9 +169,8 @@ func SubscribeJSON[T any](
 	go func() {
 		defer ch.Close()
 		for delivery := range deliveries {
-			// Unmarshal the message body into type T
-			var message T
-			err := json.Unmarshal(delivery.Body, &message)
+			// Unmarshal the message body into type T using the provided unmarshaller
+			message, err := unmarshaller(delivery.Body)
 			if err != nil {
 				// Log error and discard message
 				log.Printf("Failed to unmarshal message: %v", err)
@@ -202,4 +202,42 @@ func SubscribeJSON[T any](
 	}()
 
 	return nil
+}
+
+// SubscribeJSON subscribes to a queue and handles JSON messages with a generic handler
+func SubscribeJSON[T any](
+	conn *amqp091.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType,
+	handler func(T) AckType,
+) error {
+	unmarshaller := func(data []byte) (T, error) {
+		var message T
+		err := json.Unmarshal(data, &message)
+		return message, err
+	}
+
+	return subscribe(conn, exchange, queueName, key, queueType, handler, unmarshaller)
+}
+
+// SubscribeGob subscribes to a queue and handles gob-encoded messages with a generic handler
+func SubscribeGob[T any](
+	conn *amqp091.Connection,
+	exchange,
+	queueName,
+	key string,
+	queueType SimpleQueueType,
+	handler func(T) AckType,
+) error {
+	unmarshaller := func(data []byte) (T, error) {
+		var message T
+		buf := bytes.NewBuffer(data)
+		decoder := gob.NewDecoder(buf)
+		err := decoder.Decode(&message)
+		return message, err
+	}
+
+	return subscribe(conn, exchange, queueName, key, queueType, handler, unmarshaller)
 }

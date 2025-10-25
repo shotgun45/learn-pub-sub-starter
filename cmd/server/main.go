@@ -35,19 +35,28 @@ func main() {
 	}
 	defer ch.Close()
 
-	// Declare and bind a durable queue for game logs
+	// Subscribe to game logs using SubscribeGob
 	routingKey := fmt.Sprintf("%s.*", routing.GameLogSlug)
-	_, queue, err := pubsub.DeclareAndBind(
+	err = pubsub.SubscribeGob(
 		conn,
 		routing.ExchangePerilTopic, // exchange
 		routing.GameLogSlug,        // queueName (game_logs)
 		routingKey,                 // key (game_logs.*)
 		pubsub.Durable,             // queueType
+		func(gameLog routing.GameLog) pubsub.AckType {
+			defer fmt.Print("> ")
+			err := gamelogic.WriteLog(gameLog)
+			if err != nil {
+				log.Printf("Failed to write log to disk: %v", err)
+				return pubsub.NackRequeue
+			}
+			return pubsub.Ack
+		},
 	)
 	if err != nil {
-		log.Fatalf("Failed to declare and bind game logs queue: %v", err)
+		log.Fatalf("Failed to subscribe to game logs: %v", err)
 	}
-	fmt.Printf("Durable queue %s declared and bound to %s exchange with routing key %s\n", queue.Name, routing.ExchangePerilTopic, routingKey)
+	fmt.Printf("Successfully subscribed to game logs from %s exchange with routing key %s\n", routing.ExchangePerilTopic, routingKey)
 
 	// Print server help to show available commands
 	gamelogic.PrintServerHelp()
