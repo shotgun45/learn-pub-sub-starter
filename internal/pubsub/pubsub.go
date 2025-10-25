@@ -1,7 +1,9 @@
 package pubsub
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"log"
 
@@ -102,6 +104,32 @@ func PublishJSON[T any](ch *amqp091.Channel, exchange, key string, val T) error 
 		amqp091.Publishing{
 			ContentType: "application/json",
 			Body:        jsonBytes,
+		},
+	)
+}
+
+// PublishGob publishes a gob-encoded value to RabbitMQ
+func PublishGob[T any](ch *amqp091.Channel, exchange, key string, val T) error {
+	// Create a buffer to encode the value into
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+
+	// Encode the val to gob bytes
+	err := encoder.Encode(val)
+	if err != nil {
+		return err
+	}
+
+	// Use the channel's PublishWithContext method
+	return ch.PublishWithContext(
+		context.Background(), // ctx
+		exchange,             // exchange
+		key,                  // routing key
+		false,                // mandatory
+		false,                // immediate
+		amqp091.Publishing{
+			ContentType: "application/gob",
+			Body:        buf.Bytes(),
 		},
 	)
 }
